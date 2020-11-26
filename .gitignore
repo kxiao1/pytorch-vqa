@@ -1,3 +1,7 @@
 __pycache__
+.DS_Store
 *.pyc
 vqa
+vizwiz/*
+vocab.json
+*.pth

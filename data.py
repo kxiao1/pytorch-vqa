@@ -46,7 +46,6 @@ class VQA(data.Dataset):
             annotations_json = json.load(fd)
         with open(config.vocabulary_path, 'r') as fd:
             vocab_json = json.load(fd)
-        self._check_integrity(questions_json, answers_json)
 
         # vocab
         self.vocab = vocab_json
@@ -56,6 +55,7 @@ class VQA(data.Dataset):
         # q and a
         self.questions = list(prepare_questions(annotations_json))
         self.answers = list(prepare_answers(annotations_json))
+        assert len(self.questions) == len(self.answers)
         self.questions = [self._encode_question(q) for q in self.questions]
         self.answers = [self._encode_answers(a) for a in self.answers]
 
@@ -85,14 +85,6 @@ class VQA(data.Dataset):
             coco_ids = features_file['ids'][()]
         coco_id_to_index = {id: i for i, id in enumerate(coco_ids)}
         return coco_id_to_index
-
-    def _check_integrity(self, questions, answers):
-        """ Verify that we are using the correct data """
-        qa_pairs = list(zip(questions['questions'], answers['annotations']))
-        assert all(q['question_id'] == a['question_id'] for q, a in qa_pairs), 'Questions not aligned with answers'
-        assert all(q['image_id'] == a['image_id'] for q, a in qa_pairs), 'Image id of question and answer don\'t match'
-        assert questions['data_type'] == answers['data_type'], 'Mismatched data types'
-        assert questions['data_subtype'] == answers['data_subtype'], 'Mismatched data subtypes'
 
     def _find_answerable(self):
         """ Create a list of indices into questions that will have at least one answer that is in the vocab """

@@ -41,16 +41,16 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
     loss_tracker = tracker.track('{}_loss'.format(prefix), tracker_class(**tracker_params))
     acc_tracker = tracker.track('{}_acc'.format(prefix), tracker_class(**tracker_params))
 
-    log_softmax = nn.LogSoftmax().cuda()
+    log_softmax = nn.LogSoftmax().to("cuda:0" if torch.cuda.is_available() else "cpu")
     for v, q, a, idx, q_len in tq:
         var_params = {
             'volatile': not train,
             'requires_grad': False,
         }
-        v = Variable(v.cuda(async=True), **var_params)
-        q = Variable(q.cuda(async=True), **var_params)
-        a = Variable(a.cuda(async=True), **var_params)
-        q_len = Variable(q_len.cuda(async=True), **var_params)
+        v = Variable(v.to("cuda:0" if torch.cuda.is_available() else "cpu"), **var_params)
+        q = Variable(q.to("cuda:0" if torch.cuda.is_available() else "cpu"), **var_params)
+        a = Variable(a.to("cuda:0" if torch.cuda.is_available() else "cpu"), **var_params)
+        q_len = Variable(q_len.to("cuda:0" if torch.cuda.is_available() else "cpu"), **var_params)
 
         out = net(v, q, q_len)
         nll = -log_softmax(out)
@@ -88,6 +88,7 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
 
 
 def main():
+    print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
     if len(sys.argv) > 1:
         name = ' '.join(sys.argv[1:])
     else:
