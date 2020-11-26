@@ -17,8 +17,7 @@ def get_loader(train=False, val=False, test=False):
     """ Returns a data loader for the desired split """
     assert train + val + test == 1, 'need to set exactly one of {train, val, test} to True'
     split = VQA(
-        utils.path_for(train=train, val=val, test=test, question=True),
-        utils.path_for(train=train, val=val, test=test, answer=True),
+        utils.path_for_annotations(train=train, val=val, test=test),
         config.preprocessed_path,
         answerable_only=train,
     )
@@ -41,12 +40,10 @@ def collate_fn(batch):
 
 class VQA(data.Dataset):
     """ VQA dataset, open-ended """
-    def __init__(self, questions_path, answers_path, image_features_path, answerable_only=False):
+    def __init__(self, annotations_path, image_features_path, answerable_only=False):
         super(VQA, self).__init__()
-        with open(questions_path, 'r') as fd:
-            questions_json = json.load(fd)
-        with open(answers_path, 'r') as fd:
-            answers_json = json.load(fd)
+        with open(annotations_path, 'r') as fd:
+            annotations_json = json.load(fd)
         with open(config.vocabulary_path, 'r') as fd:
             vocab_json = json.load(fd)
         self._check_integrity(questions_json, answers_json)
@@ -57,8 +54,8 @@ class VQA(data.Dataset):
         self.answer_to_index = self.vocab['answer']
 
         # q and a
-        self.questions = list(prepare_questions(questions_json))
-        self.answers = list(prepare_answers(answers_json))
+        self.questions = list(prepare_questions(annotations_json))
+        self.answers = list(prepare_answers(annotations_json))
         self.questions = [self._encode_question(q) for q in self.questions]
         self.answers = [self._encode_answers(a) for a in self.answers]
 
@@ -170,37 +167,35 @@ _punctuation_chars = re.escape(r';/[]"{}()=+\_-><@`,?!')
 _punctuation = re.compile(r'([{}])'.format(re.escape(_punctuation_chars)))
 _punctuation_with_a_space = re.compile(r'(?<= )([{0}])|([{0}])(?= )'.format(_punctuation_chars))
 
+def process_punctuation(s):
+    # the original is somewhat broken, so things that look odd here might just be to mimic that behaviour
+    # this version should be faster since we use re instead of repeated operations on str's
+    if _punctuation.search(s) is None:
+        return s
+    s = _punctuation_with_a_space.sub('', s)
+    if re.search(_comma_strip, s) is not None:
+        s = s.replace(',', '')
+    s = _punctuation.sub(' ', s)
+    s = _period_strip.sub('', s)
+    return s.strip()
 
-def prepare_questions(questions_json):
-    """ Tokenize and normalize questions from a given question json in the usual VQA format. """
-    questions = [q['question'] for q in questions_json['questions']]
+def prepare_questions(annotations_json):
+    """ Tokenize and normalize questions from a given annotations json in the usual VQA format. """
+    questions = [image['question'] for image in annotations_json]
     for question in questions:
-        question = question.lower()[:-1]
-        yield question.split(' ')
+        question = process_punctuation(question.lower())
+        yield question.strip().split()
 
 
-def prepare_answers(answers_json):
-    """ Normalize answers from a given answer json in the usual VQA format. """
-    answers = [[a['answer'] for a in ans_dict['answers']] for ans_dict in answers_json['annotations']]
+def prepare_answers(annotations_json):
+    """ Normalize answers from a given annotations json in the usual VQA format. """
+    answers = [[a['answer'] for a in image['answers']] for image in annotations_json]
     # The only normalization that is applied to both machine generated answers as well as
     # ground truth answers is replacing most punctuation with space (see [0] and [1]).
     # Since potential machine generated answers are just taken from most common answers, applying the other
     # normalizations is not needed, assuming that the human answers are already normalized.
     # [0]: http://visualqa.org/evaluation.html
     # [1]: https://github.com/VT-vision-lab/VQA/blob/3849b1eae04a0ffd83f56ad6f70ebd0767e09e0f/PythonEvaluationTools/vqaEvaluation/vqaEval.py#L96
-
-    def process_punctuation(s):
-        # the original is somewhat broken, so things that look odd here might just be to mimic that behaviour
-        # this version should be faster since we use re instead of repeated operations on str's
-        if _punctuation.search(s) is None:
-            return s
-        s = _punctuation_with_a_space.sub('', s)
-        if re.search(_comma_strip, s) is not None:
-            s = s.replace(',', '')
-        s = _punctuation.sub(' ', s)
-        s = _period_strip.sub('', s)
-        return s.strip()
-
     for answer_list in answers:
         yield list(map(process_punctuation, answer_list))
 
