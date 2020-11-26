@@ -25,16 +25,13 @@ def extract_vocab(iterable, top_k=None, start=0):
 
 
 def main():
-    questions = utils.path_for(train=True, question=True)
-    answers = utils.path_for(train=True, answer=True)
+    annotations_path = utils.path_for_annotations(val=True)
 
-    with open(questions, 'r') as fd:
-        questions = json.load(fd)
-    with open(answers, 'r') as fd:
-        answers = json.load(fd)
+    with open(annotations_path, 'r') as fd:
+        annotations_json = json.load(fd)
 
-    questions = data.prepare_questions(questions)
-    answers = data.prepare_answers(answers)
+    questions = data.prepare_questions(annotations_json)
+    answers = data.prepare_answers(annotations_json)
 
     question_vocab = extract_vocab(questions, start=1)
     answer_vocab = extract_vocab(answers, top_k=config.max_answers)

@@ -18,11 +18,11 @@ def batch_accuracy(predicted, true):
     There are two cases for the 1 chosen answer to be discarded:
     (1) the discarded answer is not the predicted answer => acc stays the same
     (2) the discarded answer is the predicted answer => we have to subtract 1 from the number of agreeing answers
-    
+
     There are (10 - num_agreeing_answers) of case 1 and num_agreeing_answers of case 2, thus
     acc = ((10 - agreeing) * min( agreeing      / 3, 1)
            +     agreeing  * min((agreeing - 1) / 3, 1)) / 10
-    
+
     Let's do some more simplification:
     if num_agreeing_answers == 0:
         acc = 0  since the case 1 min term becomes 0 and case 2 weighting term is 0
@@ -40,22 +40,15 @@ def batch_accuracy(predicted, true):
     return (agreeing * 0.3).clamp(max=1)
 
 
-def path_for(train=False, val=False, test=False, question=False, answer=False):
+def path_for_annotations(train=False, val=False, test=False):
     assert train + val + test == 1
-    assert question + answer == 1
-    assert not (test and answer), 'loading answers from test split not supported'  # if you want to eval on test, you need to implement loading of a VQA Dataset without given answers yourself
     if train:
-        split = 'train2014'
+        split = 'train.json'
     elif val:
-        split = 'val2014'
+        split = 'val.json'
     else:
-        split = 'test2015'
-    if question:
-        fmt = '{0}_{1}_{2}_questions.json'
-    else:
-        fmt = '{1}_{2}_annotations.json'
-    s = fmt.format(config.task, config.dataset, split)
-    return os.path.join(config.qa_path, s)
+        split = 'test.json'
+    return os.path.join(config.qa_path, split)
 
 
 class Tracker:

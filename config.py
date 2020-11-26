@@ -1,5 +1,5 @@
 # paths
-qa_path = 'vizwiz'  # directory containing the question and annotation jsons
+qa_path = 'vizwiz/Annotations'  # directory containing the question and annotation jsons
 train_path = 'vizwiz/train'  # directory of training images
 val_path = 'vizwiz/val'  # directory of validation images
 test_path = 'vizwiz/test'  # directory of test images
