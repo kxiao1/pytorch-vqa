@@ -61,8 +61,8 @@ class VQA(data.Dataset):
 
         # v
         self.image_features_path = image_features_path
-        self.coco_id_to_index = self._create_coco_id_to_index()
-        self.coco_ids = [q['image_id'] for q in questions_json['questions']]
+        self.vizwiz_id_to_index = self._create_vizwiz_id_to_index()
+        self.vizwiz_ids = [q['image_id'] for q in questions_json['questions']]
 
         # only use questions that have at least one answer?
         self.answerable_only = answerable_only
@@ -79,12 +79,12 @@ class VQA(data.Dataset):
     def num_tokens(self):
         return len(self.token_to_index) + 1  # add 1 for <unknown> token at index 0
 
-    def _create_coco_id_to_index(self):
-        """ Create a mapping from a COCO image id into the corresponding index into the h5 file """
+    def _create_vizwiz_id_to_index(self):
+        """ Create a mapping from a VizWiz image id into the corresponding index into the h5 file """
         with h5py.File(self.image_features_path, 'r') as features_file:
-            coco_ids = features_file['ids'][()]
-        coco_id_to_index = {id: i for i, id in enumerate(coco_ids)}
-        return coco_id_to_index
+            vizwiz_ids = features_file['ids'][()]
+        vizwiz_id_to_index = {id: i for i, id in enumerate(vizwiz_ids)}
+        return vizwiz_id_to_index
 
     def _find_answerable(self):
         """ Create a list of indices into questions that will have at least one answer that is in the vocab """
@@ -123,7 +123,7 @@ class VQA(data.Dataset):
             # forks for multiple works, every child would use the same file object and fail
             # Having multiple readers using different file objects is fine though, so we just init in here.
             self.features_file = h5py.File(self.image_features_path, 'r')
-        index = self.coco_id_to_index[image_id]
+        index = self.vizwiz_id_to_index[image_id]
         dataset = self.features_file['features']
         img = dataset[index].astype('float32')
         return torch.from_numpy(img)
@@ -135,7 +135,7 @@ class VQA(data.Dataset):
 
         q, q_length = self.questions[item]
         a = self.answers[item]
-        image_id = self.coco_ids[item]
+        image_id = self.vizwiz_ids[item]
         v = self._load_image(image_id)
         # since batches are re-ordered for PackedSequence's, the original question order is lost
         # we return `item` so that the order of (v, q, a) triples can be restored if desired
@@ -192,10 +192,10 @@ def prepare_answers(annotations_json):
         yield list(map(process_punctuation, answer_list))
 
 
-class CocoImages(data.Dataset):
-    """ Dataset for MSCOCO images located in a folder on the filesystem """
+class VizWizImages(data.Dataset):
+    """ Dataset for VizWiz images located in a folder on the filesystem """
     def __init__(self, path, transform=None):
-        super(CocoImages, self).__init__()
+        super(VizWizImages, self).__init__()
         self.path = path
         self.id_to_filename = self._find_images()
         self.sorted_ids = sorted(self.id_to_filename.keys())  # used for deterministic iteration order
@@ -203,6 +203,8 @@ class CocoImages(data.Dataset):
         self.transform = transform
 
     def _find_images(self):
+        # Format: VizWiz_{train/test}_{id}.jpg
+        # parse id as an integer
         id_to_filename = {}
         for filename in os.listdir(self.path):
             if not filename.endswith('.jpg'):

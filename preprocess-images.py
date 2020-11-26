@@ -28,7 +28,7 @@ class Net(nn.Module):
 
 def create_coco_loader(*paths):
     transform = utils.get_transform(config.image_size, config.central_fraction)
-    datasets = [data.CocoImages(path, transform=transform) for path in paths]
+    datasets = [data.VizWizImages(path, transform=transform) for path in paths]
     dataset = data.Composite(*datasets)
     data_loader = torch.utils.data.DataLoader(
         dataset,
