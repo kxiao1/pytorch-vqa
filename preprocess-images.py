@@ -56,13 +56,13 @@ def main():
         config.output_size
     )
 
-    with h5py.File(config.preprocessed_path, 'w', libver='latest') as fd:
+    with h5py.File(config.preprocessed_path, 'w', libver='latest') as fd, torch.no_grad():
         features = fd.create_dataset('features', shape=features_shape, dtype='float16')
         coco_ids = fd.create_dataset('ids', shape=(len(loader.dataset),), dtype='int32')
 
         i = j = 0
         for ids, imgs in tqdm(loader):
-            imgs = Variable(imgs.to("cuda:0" if torch.cuda.is_available() else "cpu"), volatile=True)
+            imgs = Variable(imgs.to("cuda:0" if torch.cuda.is_available() else "cpu"))
             out = net(imgs)
 
             j = i + imgs.size(0)
