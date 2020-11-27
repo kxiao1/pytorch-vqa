@@ -19,7 +19,7 @@ def get_loader(train=False, val=False, test=False):
     split = VQA(
         utils.path_for_annotations(train=train, val=val, test=test),
         config.preprocessed_path,
-        answerable_only=train,
+        #answerable_only=train,
     )
     loader = torch.utils.data.DataLoader(
         split,
@@ -62,7 +62,7 @@ class VQA(data.Dataset):
         # v
         self.image_features_path = image_features_path
         self.vizwiz_id_to_index = self._create_vizwiz_id_to_index()
-        self.vizwiz_ids = [q['image_id'] for q in questions_json['questions']]
+        self.vizwiz_ids = [int(i["image"][-12:-4]) for i in annotations_json]
 
         # only use questions that have at least one answer?
         self.answerable_only = answerable_only
