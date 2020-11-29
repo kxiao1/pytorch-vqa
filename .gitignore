@@ -1,7 +1,10 @@
 __pycache__
 .DS_Store
+.vscode/
 *.pyc
 vqa
 vizwiz/*
 vocab.json
 *.pth
+*.h5
+*.jpg
