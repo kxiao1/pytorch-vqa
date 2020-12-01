@@ -8,3 +8,4 @@ vocab.json
 *.pth
 *.h5
 *.jpg
+resnet

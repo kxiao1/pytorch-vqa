@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 import config
 import data
-import model_new
+import model_modified_attention
 import utils
 
 
@@ -102,7 +102,7 @@ def main():
     train_loader = data.get_loader(train=True)
     val_loader = data.get_loader(val=True)
 
-    net = nn.DataParallel(model_new.Net(train_loader.dataset.num_tokens)).cuda()
+    net = nn.DataParallel(model_modified_attention.Net(train_loader.dataset.num_tokens)).cuda()
     optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad])
 
     tracker = utils.Tracker()

@@ -2,23 +2,36 @@ import torch
 import model
 import utils
 import data
+import json
 from train import run
+
+def get_answer_map():
+    res = {}
+    with open("vizwiz/Annotations_all/val.json") as f:
+        junk = json.loads(f.read())
+        # print(junk)
+        for dictionary in junk:
+            image_name = dictionary["image"].split(".")[-2].split("_")[-1]
+            answers = dictionary["answers"]
+            res[int(image_name)] = [answer["answer"] for answer in answers]
+    return res
 
 def main():
     print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
-    log = torch.load('logs/2017-08-04_00.55.19.pth', map_location=torch.device('cpu'))
+    true_answer_map = get_answer_map()
+    # log = torch.load('logs/baseline.pth', map_location=torch.device('cpu'))
+    log = torch.load('logs/karl_with_1000_max_answers.pth', map_location=torch.device('cpu'))
     tokens = len(log['vocab']['question']) + 1
     answer_map = {v: k for k, v in log['vocab']['answer'].items()}
-
-    net = torch.nn.DataParallel(model.Net(tokens))
-    net.load_state_dict(log['weights'])
-
-    dataset = data.get_loader(val=True)
-    tracker = utils.Tracker()
-    answ, accs, idxs = run(net, loader=dataset, optimizer=None, tracker=tracker, train=False, prefix='', epoch=0)
+    answ = log['eval']['answers']
+    accs = log['eval']['accuracies']
+    idxs = log['eval']['idx']
     for ans, acc, idx in zip(answ, accs, idxs):
         best_ans = answer_map[ans.item()]
-        print(f"index:{idx} acc:{acc} answer:{best_ans}")
+        am = true_answer_map[idx.item()]
+        colors = set(["red", "blue", "green", "white", "black", "grey", "laptop", "purple", "pink"])
+        if len(colors.intersection(am)) > 0:
+            print(f"index:{idx}, acc:{acc}, actual answer: {true_answer_map[idx.item()]}, predicted answer:{best_ans}")
     print("overall accuracy:", sum(accs)/len(accs))
 
 

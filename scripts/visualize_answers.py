@@ -34,6 +34,8 @@ def main():
     print(f"counter[{i-1}]:", counts[i-1])
     print(f"counter[{i}]:", counts[i])
     print(cdf[1000])
+    for pair in most_common[:400]:
+        print(*pair)
 
 
 if __name__ == '__main__':

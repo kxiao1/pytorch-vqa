@@ -26,7 +26,7 @@ class Net(nn.Module):
         return self.buffer
 
 
-def create_coco_loader(*paths):
+def create_vizwiz_loader(*paths):
     transform = utils.get_transform(config.image_size, config.central_fraction)
     datasets = [data.VizWizImages(path, transform=transform) for path in paths]
     dataset = data.Composite(*datasets)
@@ -47,8 +47,8 @@ def main():
     net = Net().to("cuda:0" if torch.cuda.is_available() else "cpu")
     net.eval()
 
-    # loader = create_coco_loader(config.train_path, config.val_path)
-    loader = create_coco_loader(config.val_path)
+    loader = create_vizwiz_loader(config.train_path, config.val_path)
+    # loader = create_vizwiz_loader(config.val_path)
     features_shape = (
         len(loader.dataset),
         config.output_features,
