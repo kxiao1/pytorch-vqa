@@ -40,6 +40,16 @@ def batch_accuracy(predicted, true):
     return (agreeing * 0.3).clamp(max=1)
 
 
+def batch_accuracy_partial(predicted, true):
+    """ Compute the accuracies for a batch of predictions and answers, where there may not be ten answers total """
+    _, predicted_index = predicted.max(dim=1, keepdim=True)
+    agreeing = true.gather(dim=1, index=predicted_index)
+    '''
+    computed as just the number of agreeing answers divided by the number of total answers
+    '''
+    return (agreeing / true.sum(dim=1, keepdim=True)).clamp(max=1)
+
+
 def path_for_annotations(train=False, val=False, test=False):
     assert train + val + test == 1
     if train:

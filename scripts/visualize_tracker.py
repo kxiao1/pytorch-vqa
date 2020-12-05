@@ -1,10 +1,14 @@
+import os
 import sys
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
+
 
 def main():
     assert len(sys.argv) > 1
     log = torch.load(sys.argv[1], map_location=torch.device('cpu'))
+    log_name = os.path.basename(sys.argv[1])[:-4]
     tracker = log['tracker']
     num_epochs = len(tracker['train_loss'])
     assert num_epochs == len(tracker['train_acc'])
@@ -25,7 +29,10 @@ def main():
     plt.plot(epoch_list, mean_val_loss, label='val loss')
     plt.plot(epoch_list, mean_val_acc, label='val acc')
     plt.legend(loc='best')
-    plt.savefig('temp.jpg')
+    plt.xlabel("Epoch")
+    plt.title(log_name)
+    plt.savefig(f"img/{log_name}.jpg")
+    plt.show()
 
     print("========SUMMARY========")
     best_index = min(range(num_epochs), key=lambda i: mean_val_loss[i])
@@ -33,6 +40,8 @@ def main():
     print("val acc @ best val loss:", mean_val_acc[best_index])
     smoothed = mean_val_acc[max(0,best_index-2):min(best_index+3, len(mean_val_acc))]
     print("smoothed val acc (average of 5) @ best val loss:", sum(smoothed)/len(smoothed))
+    last10 = mean_val_acc[-10:]
+    print("average of last 10 val acc:", sum(last10)/len(last10))
     print("best val acc:", max(mean_val_acc))
 
 

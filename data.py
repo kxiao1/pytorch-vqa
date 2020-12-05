@@ -11,15 +11,20 @@ import torchvision.transforms as transforms
 
 import config
 import utils
+import colors
 
 
-def get_loader(train=False, val=False, test=False):
+def get_loader(train=False, val=False, test=False, color_only=False, check_suitable=False,
+    check_pertains_to_color=False):
     """ Returns a data loader for the desired split """
     assert train + val + test == 1, 'need to set exactly one of {train, val, test} to True'
     split = VQA(
         utils.path_for_annotations(train=train, val=val, test=test),
         config.preprocessed_path,
         #answerable_only=train,
+        color_only=color_only,
+        check_suitable=check_suitable,
+        check_pertains_to_color=check_pertains_to_color
     )
     loader = torch.utils.data.DataLoader(
         split,
@@ -40,7 +45,8 @@ def collate_fn(batch):
 
 class VQA(data.Dataset):
     """ VQA dataset, open-ended """
-    def __init__(self, annotations_path, image_features_path, answerable_only=False):
+    def __init__(self, annotations_path, image_features_path, answerable_only=False, 
+    color_only=False, check_suitable = False, check_pertains_to_color=False):
         super(VQA, self).__init__()
         with open(annotations_path, 'r') as fd:
             annotations_json = json.load(fd)
@@ -57,7 +63,15 @@ class VQA(data.Dataset):
         self.answers = list(prepare_answers(annotations_json))
         assert len(self.questions) == len(self.answers)
         self.questions = [self._encode_question(q) for q in self.questions]
-        self.answers = [self._encode_answers(a) for a in self.answers]
+        
+        self.check_suitable = check_suitable
+        if self.check_suitable:
+            # only check if question is unanswerable 
+            self.answers = [self._encode_suitable(a) for a in self.answers]
+            print(len(self.answers), len(self.answers)-sum(self.answers))
+        else:
+            self.answers = [self._encode_answers(a) for a in self.answers]
+        
 
         # v
         self.image_features_path = image_features_path
@@ -68,6 +82,18 @@ class VQA(data.Dataset):
         self.answerable_only = answerable_only
         if self.answerable_only:
             self.answerable = self._find_answerable()
+
+        # self.color_only: only use questions that pertain to color?
+        # self.check_pertains_to_color: include in the output
+        # a binary flag indicating whether the question has at least one
+        # answer which is a color
+        self.color_only = color_only
+        self.check_pertains_to_color = check_pertains_to_color
+        if self.color_only or self.check_pertains_to_color:
+            import colors
+            self.color_answer_indices = [self.answer_to_index[color] for color in colors.colors]
+            self.color_question_indices = self._find_color_question_indices()
+            self.color_question_indices_set = set(self.color_question_indices)
 
     @property
     def max_question_length(self):
@@ -96,6 +122,16 @@ class VQA(data.Dataset):
                 answerable.append(i)
         return answerable
 
+    def _find_color_question_indices(self):
+        """ Create a list of indices into questions that have at least one answer that's a color """
+        color_indices = []
+        for i, answers in enumerate(self.answers):
+            answer_has_color = sum(answers[self.color_answer_indices]) > 0
+            # store the indices of anything that has a color as an answer
+            if answer_has_color:
+                color_indices.append(i)
+        return color_indices
+
     def _encode_question(self, question):
         """ Turn a question into a vector of indices and a question length """
         vec = torch.zeros(self.max_question_length).long()
@@ -116,6 +152,14 @@ class VQA(data.Dataset):
                 answer_vec[index] += 1
         return answer_vec
 
+    def _encode_suitable(self, answers):
+        """ Turn an answer into a binary flag: 0 iff at least 3 out 10 answers were 'unsuitable'"""
+        num_bad = 0
+        for answer in answers:
+            if answer == "unsuitable" or answer == "unsuitable image":
+                num_bad += 1
+        return torch.tensor(0) if num_bad >= 3 else torch.tensor(1)
+
     def _load_image(self, image_id):
         """ Load an image """
         if not hasattr(self, 'features_file'):
@@ -132,19 +176,31 @@ class VQA(data.Dataset):
         if self.answerable_only:
             # change of indices to only address answerable questions
             item = self.answerable[item]
+        if self.color_only:
+            # change of indices to only address questions about color
+            item = self.color_question_indices[item]
 
         q, q_length = self.questions[item]
         a = self.answers[item]
+        if self.color_only:
+            a = a[self.color_answer_indices]
         image_id = self.vizwiz_ids[item]
         v = self._load_image(image_id)
         # since batches are re-ordered for PackedSequence's, the original question order is lost
         # we return `item` so that the order of (v, q, a) triples can be restored if desired
         # without shuffling in the dataloader, these will be in the order that they appear in the q and a json's.
+
+        if self.check_pertains_to_color:
+            c = 1 if item in self.color_question_indices_set else 0
+            return v, q, c, item, q_length
+
         return v, q, a, item, q_length
 
     def __len__(self):
         if self.answerable_only:
             return len(self.answerable)
+        elif self.color_only:
+            return len(self.color_question_indices)
         else:
             return len(self.questions)
 

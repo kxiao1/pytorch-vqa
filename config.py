@@ -5,6 +5,8 @@ val_path = 'vizwiz/val_all'  # directory of validation images
 test_path = 'vizwiz/test_all'  # directory of test images
 preprocessed_path = './resnet-14x14.h5'  # path where preprocessed features are saved to and loaded from
 vocabulary_path = 'vocab.json'  # path where the used vocabularies for question and answers are saved to
+colors_path = 'colors.txt' # path where list of colors is stored
+unprocessed_images_path = './unprocessed.h5'
 
 task = 'OpenEnded'
 dataset = 'mscoco'

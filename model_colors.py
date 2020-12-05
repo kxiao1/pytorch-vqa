@@ -6,24 +6,29 @@ import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
+from torch.autograd import Variable
 from tqdm import tqdm
 
 import config
 import data
 import model
 import utils
+import colors
+from train import update_learning_rate, total_iterations
 
-
-def update_learning_rate(optimizer, iteration):
-    lr = config.initial_lr * 0.5**(float(iteration) / config.lr_halflife)
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
-
-total_iterations = 0
-
+# Simple neural network to classify colors given resnet feature maps
+color_net = nn.Sequential(
+        nn.AdaptiveAvgPool2d((6,6)),
+        nn.Flatten(),
+        nn.Dropout(),
+        nn.Linear(config.output_features * 6 * 6, 1024),
+        nn.ReLU(inplace=True),
+        nn.Dropout(),
+        nn.Linear(1024, 128),
+        nn.ReLU(inplace=True),
+        nn.Linear(128, colors.num_colors),
+        )
 
 def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
     """ Run an epoch over the given loader """
@@ -52,10 +57,10 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             a = Variable(a.to("cuda:0" if torch.cuda.is_available() else "cpu"), **var_params)
             q_len = Variable(q_len.to("cuda:0" if torch.cuda.is_available() else "cpu"), **var_params)
 
-        out = net(v, q, q_len)
+        out = net(v)
         nll = -log_softmax(out)
         loss = (nll * a / 10).sum(dim=1).mean()
-        acc = utils.batch_accuracy(out.data, a.data).cpu()
+        acc = utils.batch_accuracy_partial(out.data, a.data).cpu()
 
         if train:
             global total_iterations
@@ -69,7 +74,6 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
         else:
             # store information about evaluation of this minibatch
             _, answer = out.data.cpu().max(dim=1)
-
             answ.append(answer.view(-1))
             accs.append(acc.view(-1))
             idxs.append(idx.view(-1).clone())
@@ -100,11 +104,11 @@ def main():
 
     cudnn.benchmark = True
 
-    train_loader = data.get_loader(train=True)
-    val_loader = data.get_loader(val=True)
+    train_loader = data.get_loader(train=True, color_only=True)
+    val_loader = data.get_loader(val=True, color_only=True)
 
-    net = nn.DataParallel(model.Net(train_loader.dataset.num_tokens)).cuda()
-    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad])
+    net = nn.DataParallel(color_net).cuda()
+    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=0.01)
 
     tracker = utils.Tracker()
     config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
