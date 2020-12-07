@@ -66,6 +66,11 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             optimizer.step()
 
             total_iterations += 1
+            act = activation['attention'].squeeze()
+            print(act)
+            fig, axarr = plt.subplots(act.size(0))
+            for idx in range(act.size(0)):
+                axarr[idx].imshow(act[idx])
         else:
             # store information about evaluation of this minibatch
             _, answer = out.data.cpu().max(dim=1)
@@ -86,6 +91,14 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
         idxs = list(torch.cat(idxs, dim=0))
         return answ, accs, idxs
 
+# Visualize feature maps
+activation = {}
+def get_activation(name):
+    def hook(model, input, output):
+        activation[name] = output.detach()
+    return hook
+
+
 
 def main():
     print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
@@ -102,13 +115,19 @@ def main():
     train_loader = data.get_loader(train=True)
     val_loader = data.get_loader(val=True)
 
-    net = nn.DataParallel(model_modified_attention.Net(train_loader.dataset.num_tokens)).cuda()
+    # net = nn.DataParallel(model_modified_attention.Net(train_loader.dataset.num_tokens)).cuda()
+    net = model_modified_attention.Net(train_loader.dataset.num_tokens)
+    print(net)
     optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad])
+    for name, layer in net.named_modules():
+        if isinstance(layer, torch.nn.Conv2d):
+            print(name, layer)
+    net.attention.register_forward_hook(get_activation('attention'))
 
     tracker = utils.Tracker()
     config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
 
-    for i in range(config.epochs):
+    for i in range(1):
         _ = run(net, train_loader, optimizer, tracker, train=True, prefix='train', epoch=i)
         r = run(net, val_loader, optimizer, tracker, train=False, prefix='val', epoch=i)
 

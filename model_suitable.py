@@ -128,8 +128,7 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             total_iterations += 1
         else:
             # store information about evaluation of this minibatch
-            _, answer = out.data.cpu().max(dim=0)
-            answ.append(answer.view(-1))
+            answ.append(out.data.cpu())
             for a in acc:
                 accs.append(a)
             idxs.append(idx.view(-1).clone())
@@ -139,12 +138,13 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             acc_tracker.append(a)
         fmt = '{:.4f}'.format
         tq.set_postfix(loss=fmt(loss_tracker.mean.value), acc=fmt(acc_tracker.mean.value))
-    print(out.data)
+    # print(out.data)
 
     if not train:
-        answ = list(torch.cat(answ, dim=0))
+        # answ = list(torch.cat(answ, dim=0))
         # accs = list(torch.cat(accs, dim=0))
-        idxs = list(torch.cat(idxs, dim=0))
+        # idxs = list(torch.cat(idxs, dim=0))
+        # print(answ, accs, idxs)
         return answ, accs, idxs
 
 
@@ -164,7 +164,7 @@ def main():
     val_loader = data.get_loader(val=True, check_suitable=True)
 
     net = nn.DataParallel(QualityNet()).cuda()
-    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=0.01)
+    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad])
 
     tracker = utils.Tracker()
     config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}

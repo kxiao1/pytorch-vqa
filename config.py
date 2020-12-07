@@ -1,10 +1,10 @@
 # paths
-qa_path = 'vizwiz/Annotations_all'  # directory containing the question and annotation jsons
-train_path = 'vizwiz/train_all'  # directory of training images
-val_path = 'vizwiz/val_all'  # directory of validation images
-test_path = 'vizwiz/test_all'  # directory of test images
-preprocessed_path = './resnet-14x14.h5'  # path where preprocessed features are saved to and loaded from
-vocabulary_path = 'vocab.json'  # path where the used vocabularies for question and answers are saved to
+qa_path = 'vizwiz/Annotations_augmented'  # directory containing the question and annotation jsons
+train_path = 'vizwiz/train_augmented'  # directory of training images
+val_path = 'vizwiz/val_augmented'  # directory of validation images
+test_path = 'vizwiz/test_augmented'  # directory of test images
+preprocessed_path = './resnet-14x14-aug.h5'  # path where preprocessed features are saved to and loaded from
+vocabulary_path = 'vocab-aug.json'  # path where the used vocabularies for question and answers are saved to
 colors_path = 'colors.txt' # path where list of colors is stored
 unprocessed_images_path = './unprocessed.h5'
 
@@ -19,7 +19,7 @@ output_features = 2048  # number of feature maps thereof
 central_fraction = 0.875  # only take this much of the centre when scaling and centre cropping
 
 # training config
-epochs = 30
+epochs = 4
 batch_size = 128
 initial_lr = 1e-3  # default Adam lr
 lr_halflife = 50000  # in iterations

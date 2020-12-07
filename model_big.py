@@ -16,7 +16,7 @@ from model import Classifier, TextProcessor, Attention, apply_attention, tile_2d
 from train import run, total_iterations, update_learning_rate
 import model_colors
 import model_is_color
-import model_answerable
+import model_suitable
 import data
 import utils
 
@@ -65,16 +65,16 @@ class Net(nn.Module):
         self.is_color_classifier.eval()
 
         self.color_classifier = nn.DataParallel(model_colors.color_net).cuda()
-        log = torch.load('logs/color_with_0.01_weight_decay.pth', map_location=torch.device('cpu'))
+        log = torch.load('logs_color/color_with_0.01_weight_decay.pth', map_location=torch.device('cpu'))
         self.color_classifier.load_state_dict(log['weights'])
         self.color_classifier_weights = log['weights']
         self.color_classifier.eval()
 
-        self.answerable_classifier = nn.DataParallel(model_answerable.QualityNet()).cuda()
-        log = torch.load('logs/is_answerable.pth', map_location=torch.device('cpu'))
-        self.answerable_classifier.load_state_dict(log['weights'])
-        self.answerable_classifier_weights = log['weights']
-        self.answerable_classifier.eval()
+        self.suitable_classifier = nn.DataParallel(model_suitable.QualityNet()).cuda()
+        log = torch.load('logs_karl/suitable_comp_3.pth', map_location=torch.device('cpu'))
+        self.suitable_classifier.load_state_dict(log['weights'])
+        self.suitable_classifier_weights = log['weights']
+        self.suitable_classifier.eval()
 
     def forward(self, v, q, q_len):
         with torch.set_grad_enabled(False):
@@ -82,22 +82,22 @@ class Net(nn.Module):
             is_color = self.is_color_classifier(q, q_len)
             self.color_classifier.eval()
             color = self.color_classifier(v)
-            self.answerable_classifier.eval()
-            answerable  = self.answerable_classifier(v)
+            self.suitable_classifier.eval()
+            suitable  = self.suitable_classifier(v)
 
         q = self.text(q, list(q_len.data))
         v = v / (v.norm(p=2, dim=1, keepdim=True).expand_as(v) + 1e-8)
         a = self.attention(v, q)
         v = apply_attention(v, a)
 
-        combined = torch.cat([v, q, is_color, color, answerable], dim=1)
+        combined = torch.cat([v, q, is_color, color, suitable], dim=1)
         answer = self.classifier(combined)
         # for k, v in self.is_color_classifier.state_dict().items():
         #     assert torch.all(torch.eq(v.cpu(), self.is_color_classifier_weights[k].cpu()))
         # for k, v in self.color_classifier.state_dict().items():
         #     assert torch.all(torch.eq(v.cpu(), self.color_classifier_weights[k].cpu()))
-        # for k, v in self.answerable_classifier.state_dict().items():
-        #     assert torch.all(torch.eq(v.cpu(), self.answerable_classifier_weights[k].cpu()))
+        # for k, v in self.suitable_classifier.state_dict().items():
+        #     assert torch.all(torch.eq(v.cpu(), self.suitable_classifier_weights[k].cpu()))
         return answer
 
 def main():
@@ -107,7 +107,7 @@ def main():
     else:
         from datetime import datetime
         name = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    target_name = os.path.join('logs', '{}.pth'.format(name))
+    target_name = os.path.join('logs_big', '{}.pth'.format(name))
     print('will save to {}'.format(target_name))
 
     cudnn.benchmark = True
@@ -116,7 +116,7 @@ def main():
     val_loader = data.get_loader(val=True)
 
     net = nn.DataParallel(Net(train_loader.dataset.num_tokens)).cuda()
-    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=0.0005)
+    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad])
 
     tracker = utils.Tracker()
     config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}

@@ -20,7 +20,7 @@ def main():
     print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
     true_answer_map = get_answer_map()
     # log = torch.load('logs/baseline.pth', map_location=torch.device('cpu'))
-    log = torch.load('logs/karl_with_1000_max_answers.pth', map_location=torch.device('cpu'))
+    log = torch.load('logs_karl/karl_modified_3000_no_decay.pth', map_location=torch.device('cpu'))
     tokens = len(log['vocab']['question']) + 1
     answer_map = {v: k for k, v in log['vocab']['answer'].items()}
     answ = log['eval']['answers']

@@ -98,6 +98,7 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
     loss_tracker = tracker.track('{}_loss'.format(prefix), tracker_class(**tracker_params))
     acc_tracker = tracker.track('{}_acc'.format(prefix), tracker_class(**tracker_params))
 
+    answ = []
     for v, q, c, idx, q_len in tq:
 
         var_params = {
@@ -134,10 +135,15 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             loss.backward()
             optimizer.step()
             total_iterations += 1
+
         else:
             # TODO fix this
-            _, answer = out.data.cpu().max(dim=1)
-            answ.append(answer.view(-1))
+            # _, answer = out.data.cpu().max(dim=1)
+            # answ.append(out.data.cpu())
+
+            for a in out.data.cpu():
+                answ.append(a.item())
+
             for a in acc:
                 accs.append(a)
             idxs.append(idx.view(-1).clone())
@@ -148,10 +154,11 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             acc_tracker.append(a)
         fmt = '{:.4f}'.format
         tq.set_postfix(loss=fmt(loss_tracker.mean.value), acc=fmt(acc_tracker.mean.value))
-    print(out.data)
+    # print(out.data)
     
     if not train:
-        answ = list(torch.cat(answ, dim=0))
+        # answ = list(torch.cat(answ, dim=0))
+        # answ = []
         # accs = list(torch.cat(accs, dim=0))
         idxs = list(torch.cat(idxs, dim=0))
         return answ, accs, idxs
