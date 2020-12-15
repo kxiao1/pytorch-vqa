@@ -12,10 +12,9 @@ from tqdm import tqdm
 
 import config
 import data
-import model
 import utils
 import colors
-from train import update_learning_rate, total_iterations
+from model_baseline import update_learning_rate, total_iterations
 
 # Simple neural network to classify colors given resnet feature maps
 class QualityNet(nn.Module):
@@ -111,9 +110,9 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
         # loss = ((out - a)**2).sum(dim=1).mean()
         
         # binary cross entropy
-        weights = -(a.data/2 - 1).unsqueeze(-1)
+        # weights = -(a.data/2 - 1).unsqueeze(-1)
         # assert(False)
-        loss = nn.BCELoss(weight=weights)(out, a.float().unsqueeze(-1))
+        loss = nn.BCELoss()(out, a.float().unsqueeze(-1))
         chosen = [1 if x > 0.5 else 0 for x in out.data.cpu()]
         acc = [1.0 if chosen[i] == a.data[i] else 0.0 for i in range(len(chosen))]
 

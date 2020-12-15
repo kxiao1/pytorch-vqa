@@ -137,3 +137,10 @@ def get_transform(target_size, central_fraction=1.0):
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
     ])
+
+def get_transform_unnormalized(target_size, central_fraction=1.0):
+    return transforms.Compose([
+        transforms.Scale(int(target_size / central_fraction)),
+        transforms.CenterCrop(target_size),
+        transforms.ToTensor(),
+    ])

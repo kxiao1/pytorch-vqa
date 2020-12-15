@@ -47,17 +47,18 @@ def main():
     net = Net().to("cuda:0" if torch.cuda.is_available() else "cpu")
     net.eval()
 
-    # loader = create_vizwiz_loader(config.train_path, config.val_path)
+    loader = create_vizwiz_loader(config.train_path, config.val_path)
     # loader = create_vizwiz_loader(config.val_path)
-    loader = create_vizwiz_loader(config.test_path)
     features_shape = (
         len(loader.dataset),
-        config.output_features,
+        config.output_features + 3,
         config.output_size,
         config.output_size
     )
 
-    with h5py.File("resnet-test.h5", 'w', libver='latest') as fd, torch.no_grad():
+    downsampler = nn.AvgPool2d(32)
+
+    with h5py.File('resnet+downsampled.h5', 'w', libver='latest') as fd, torch.no_grad():
         features = fd.create_dataset('features', shape=features_shape, dtype='float16')
         coco_ids = fd.create_dataset('ids', shape=(len(loader.dataset),), dtype='int32')
 
@@ -65,6 +66,9 @@ def main():
         for ids, imgs in tqdm(loader):
             imgs = Variable(imgs.to("cuda:0" if torch.cuda.is_available() else "cpu"))
             out = net(imgs)
+            downsampled_imgs = downsampler(imgs)
+            out = torch.cat((out, downsampled_imgs), 1)
+            assert out.shape[1] == 2051
 
             j = i + imgs.size(0)
             features[i:j, :, :] = out.data.cpu().numpy().astype('float16')

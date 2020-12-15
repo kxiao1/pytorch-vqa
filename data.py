@@ -15,16 +15,19 @@ import colors
 
 
 def get_loader(train=False, val=False, test=False, color_only=False, check_suitable=False,
-    check_pertains_to_color=False):
+    check_pertains_to_color=False, include_original_images=False):
     """ Returns a data loader for the desired split """
     assert train + val + test == 1, 'need to set exactly one of {train, val, test} to True'
+
     split = VQA(
         utils.path_for_annotations(train=train, val=val, test=test),
-        config.preprocessed_path,
-        #answerable_only=train,
+        config.test_preprocessed_path if test else config.preprocessed_path,
+        config.test_unprocessed_path if test else config.unprocessed_images_path,
+        answerable_only=train,
         color_only=color_only,
         check_suitable=check_suitable,
-        check_pertains_to_color=check_pertains_to_color
+        check_pertains_to_color=check_pertains_to_color,
+        include_original_images=include_original_images,
     )
     loader = torch.utils.data.DataLoader(
         split,
@@ -45,8 +48,8 @@ def collate_fn(batch):
 
 class VQA(data.Dataset):
     """ VQA dataset, open-ended """
-    def __init__(self, annotations_path, image_features_path, answerable_only=False, 
-    color_only=False, check_suitable = False, check_pertains_to_color=False):
+    def __init__(self, annotations_path, image_features_path, image_path, answerable_only=False,
+            color_only=False, check_suitable = False, check_pertains_to_color=False, include_original_images=False):
         super(VQA, self).__init__()
         with open(annotations_path, 'r') as fd:
             annotations_json = json.load(fd)
@@ -75,6 +78,8 @@ class VQA(data.Dataset):
 
         # v
         self.image_features_path = image_features_path
+        self.image_path = image_path
+        self.include_original_images = include_original_images
         self.vizwiz_id_to_index = self._create_vizwiz_id_to_index()
         self.vizwiz_ids = [int(i["image"][-12:-4]) for i in annotations_json]
 
@@ -160,7 +165,7 @@ class VQA(data.Dataset):
                 num_bad += 1
         return torch.tensor(0) if num_bad >= 3 else torch.tensor(1)
 
-    def _load_image(self, image_id):
+    def _load_image_features(self, image_id):
         """ Load an image """
         if not hasattr(self, 'features_file'):
             # Loading the h5 file has to be done here and not in __init__ because when the DataLoader
@@ -169,6 +174,18 @@ class VQA(data.Dataset):
             self.features_file = h5py.File(self.image_features_path, 'r')
         index = self.vizwiz_id_to_index[image_id]
         dataset = self.features_file['features']
+        img = dataset[index].astype('float32')
+        return torch.from_numpy(img)
+
+    def _load_image(self, image_id):
+        """ Load an image """
+        if not hasattr(self, 'images_file'):
+            # Loading the h5 file has to be done here and not in __init__ because when the DataLoader
+            # forks for multiple works, every child would use the same file object and fail
+            # Having multiple readers using different file objects is fine though, so we just init in here.
+            self.images_file = h5py.File(self.image_path, 'r')
+        index = self.vizwiz_id_to_index[image_id]
+        dataset = self.images_file['features']
         img = dataset[index].astype('float32')
         return torch.from_numpy(img)
 
@@ -185,7 +202,10 @@ class VQA(data.Dataset):
         if self.color_only:
             a = a[self.color_answer_indices]
         image_id = self.vizwiz_ids[item]
-        v = self._load_image(image_id)
+        if self.include_original_images:
+            v = (self._load_image_features(image_id), self._load_image(image_id))
+        else:
+            v = self._load_image_features(image_id)
         # since batches are re-ordered for PackedSequence's, the original question order is lost
         # we return `item` so that the order of (v, q, a) triples can be restored if desired
         # without shuffling in the dataloader, these will be in the order that they appear in the q and a json's.
@@ -237,6 +257,10 @@ def prepare_questions(annotations_json):
 
 def prepare_answers(annotations_json):
     """ Normalize answers from a given annotations json in the usual VQA format. """
+    if 'answers' not in annotations_json[0]:
+        for _ in range(len(annotations_json)):
+            yield [""]*10
+        return
     answers = [[a['answer'] for a in image['answers']] for image in annotations_json]
     # The only normalization that is applied to both machine generated answers as well as
     # ground truth answers is replacing most punctuation with space (see [0] and [1]).

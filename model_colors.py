@@ -12,10 +12,9 @@ from tqdm import tqdm
 
 import config
 import data
-import model
 import utils
 import colors
-from train import update_learning_rate, total_iterations
+from model_baseline import update_learning_rate, total_iterations
 
 # Simple neural network to classify colors given resnet feature maps
 color_net = nn.Sequential(

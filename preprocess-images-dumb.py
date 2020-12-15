@@ -27,7 +27,8 @@ class Net(nn.Module):
 
 
 def create_vizwiz_loader(*paths):
-    transform = utils.get_transform(config.image_size, config.central_fraction)
+    #transform = utils.get_transform(config.image_size, config.central_fraction)
+    transform = utils.get_transform_unnormalized(config.image_size, config.central_fraction)
     datasets = [data.VizWizImages(path, transform=transform) for path in paths]
     dataset = data.Composite(*datasets)
     data_loader = torch.utils.data.DataLoader(
@@ -47,7 +48,8 @@ def main():
     # net = Net().to("cuda:0" if torch.cuda.is_available() else "cpu")
     # net.eval()
 
-    loader = create_vizwiz_loader(config.train_path, config.val_path)
+    # loader = create_vizwiz_loader(config.train_path, config.val_path)
+    loader = create_vizwiz_loader(config.test_path)
     # loader = create_vizwiz_loader(config.val_path)
     features_shape = (
         len(loader.dataset),
@@ -56,7 +58,7 @@ def main():
         448
     )
 
-    with h5py.File(config.unprocessed_images_path, 'w', libver='latest') as fd, torch.no_grad():
+    with h5py.File(config.test_unprocessed_path, 'w', libver='latest') as fd, torch.no_grad():
         features = fd.create_dataset('features', shape=features_shape, dtype='float16')
         coco_ids = fd.create_dataset('ids', shape=(len(loader.dataset),), dtype='int32')
 

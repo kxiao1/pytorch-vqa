@@ -12,8 +12,8 @@ from torch.autograd import Variable
 
 
 import config
-from model import Classifier, TextProcessor, Attention, apply_attention, tile_2d_over_nd
-from train import run, total_iterations, update_learning_rate
+from model_baseline import Classifier, TextProcessor, Attention, apply_attention, tile_2d_over_nd,\
+run, total_iterations, update_learning_rate
 import model_colors
 import model_is_color
 import model_suitable
@@ -59,19 +59,19 @@ class Net(nn.Module):
                     m.bias.data.zero_()
 
         self.is_color_classifier = nn.DataParallel(model_is_color.ColorNet(embedding_tokens)).cuda()
-        log = torch.load('logs_is_color/final.pth', map_location=torch.device('cpu'))
+        log = torch.load('logs_is_color/final_updated_vocab.pth', map_location=torch.device('cpu'))
         self.is_color_classifier.load_state_dict(log['weights'])
         self.is_color_classifier_weights = log['weights']
         self.is_color_classifier.eval()
 
         self.color_classifier = nn.DataParallel(model_colors.color_net).cuda()
-        log = torch.load('logs_color/color_with_0.01_weight_decay.pth', map_location=torch.device('cpu'))
+        log = torch.load('logs_color/color_with_0.01_weight_decay-HHMMSS.pth', map_location=torch.device('cpu'))
         self.color_classifier.load_state_dict(log['weights'])
         self.color_classifier_weights = log['weights']
         self.color_classifier.eval()
 
         self.suitable_classifier = nn.DataParallel(model_suitable.QualityNet()).cuda()
-        log = torch.load('logs_karl/suitable_comp_3.pth', map_location=torch.device('cpu'))
+        log = torch.load('logs_karl/suitable_0.01decay_2xPenalty-.pth', map_location=torch.device('cpu'))
         self.suitable_classifier.load_state_dict(log['weights'])
         self.suitable_classifier_weights = log['weights']
         self.suitable_classifier.eval()
@@ -100,13 +100,16 @@ class Net(nn.Module):
         #     assert torch.all(torch.eq(v.cpu(), self.suitable_classifier_weights[k].cpu()))
         return answer
 
-def main():
+def main(name=None):
     print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
     if len(sys.argv) > 1:
         name = ' '.join(sys.argv[1:])
     else:
         from datetime import datetime
-        name = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        if name is None:
+            name = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        else:
+            name = name + datetime.now().strftime("-%Y-%m-%d_%H:%M:%S")
     target_name = os.path.join('logs_big', '{}.pth'.format(name))
     print('will save to {}'.format(target_name))
 
@@ -115,11 +118,11 @@ def main():
     train_loader = data.get_loader(train=True)
     val_loader = data.get_loader(val=True)
 
+    config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
     net = nn.DataParallel(Net(train_loader.dataset.num_tokens)).cuda()
-    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad])
+    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=config_as_dict["weight_decay"])
 
     tracker = utils.Tracker()
-    config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
 
     for i in range(config.epochs):
         _ = run(net, train_loader, optimizer, tracker, train=True, prefix='train', epoch=i)

@@ -1,104 +1,111 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.nn.init as init
-from torch.nn.utils.rnn import pack_padded_sequence
-import torch.optim as optim
-from torch.autograd import Variable
-import torch.backends.cudnn as cudnn
-import matplotlib.pyplot as plt
-from tqdm import tqdm
-
 import sys
 import os.path
 import math
 import json
+import matplotlib.pyplot as plt
 
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torch.nn.functional as F
+import torch.nn.init as init
+from torch.nn.utils.rnn import pack_padded_sequence
+from torch.autograd import Variable
+import torch.backends.cudnn as cudnn
+from tqdm import tqdm
 
 import config
 import data
 import utils
-import config
 
-# batch_size = 128 
+config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
 
 class Net(nn.Module):
-    """ Re-implementation of ``Show, Ask, Attend, and Answer: A Strong Baseline For Visual Question Answering'' [0]
-
-    [0]: https://arxiv.org/abs/1704.03162
+    """even dumber model
     """
 
     def __init__(self, embedding_tokens):
         super(Net, self).__init__()
         question_features = 1024
         vision_features = config.output_features
-        glimpses = 2
-        # print("embedding tokens:", embedding_tokens) = 2061 tokens in questions
+
         self.text = TextProcessor(
             embedding_tokens=embedding_tokens,
             embedding_features=300,
             lstm_features=question_features,
             drop=0.5,
         )
-        self.attention = Attention(
-            v_features=vision_features,
-            q_features=question_features,
-            mid_features=512,
-            glimpses=2,
-            drop=0.5,
-        )
-        # self.classifier = Classifier(
-        #     in_features=glimpses * vision_features + question_features,
-        #     mid_features=1024,
-        #     out_features=config.max_answers,
-        #     drop=0.5,
-        # )
-
         self.classifier = Classifier(
-            in_features=glimpses * vision_features + vision_features,
+            in_features=512+729,
             mid_features=1024,
             out_features=config.max_answers,
             drop=0.5,
         )
+        self.drop = nn.Dropout(0.5)
+        self.v_conv = nn.Conv2d(vision_features, 512, 1, bias=False)  # let self.lin take care of bias
+
+        self.degen_conv = nn.Conv2d(3, 3, 3, stride=2)
+        self.degen_conv2 = nn.Conv2d(3, 1, 3, stride=2)
+
+        self.q_lin1 = nn.Linear(question_features, 512)
         for m in self.modules():
             if isinstance(m, nn.Linear) or isinstance(m, nn.Conv2d):
                 init.xavier_uniform(m.weight)
                 if m.bias is not None:
                     m.bias.data.zero_()
 
-    # def forward(self, v, q, q_len):
-    #     q = self.text(q, list(q_len.data))
-    #     # print("after text layer", q.size()) = [128, 1024]
-    #     v = v / (v.norm(p=2, dim=1, keepdim=True).expand_as(v) + 1e-8)
-    #     # print("image vector size", v.size()) = [128, 2048, 14, 14]
-    #     a = self.attention(v, q)
-    #     # print("after attention layer", a.size()) = [128, 2, 14, 14], 2 glimpses
-    #     v = apply_attention(v, a)
-    #     # print("after applying attention", v.size()) = [128, 4096 + 1024]
-    #     combined = torch.cat([v, q], dim=1)
-    #     answer = self.classifier(combined)
-    #     return answer
-
+    # v is now the raw image file
     def forward(self, v, q, q_len):
         q = self.text(q, list(q_len.data))
-        # print("after text layer", q.size()) = [128, 1024]
-        v = v / (v.norm(p=2, dim=1, keepdim=True).expand_as(v) + 1e-8)
-        # print("image vector size", v.size()) = [128, 2048, 14, 14]
-        a = self.attention(v, q)
-        # print("after attention layer", a.size()) = [128, 2, 14, 14], 2 glimpses
-        v_after_attention = apply_attention(v, a)
-    
-        temp = v.mean(dim = -1)
-        v_squeezed = temp.mean(dim = -1)
-        # print(v.size(), v_squeezed.size(), v_after_attention.size())
-        combined = torch.cat([v_squeezed, v_after_attention], dim=1)
-        # print("after concat", v.size()) = [128, 4096]
+
+        # print("Initial v:", v.size())
+
+        v = self.degen_conv(v)
+
+        # print("After 1: ", v.size())
+
+        v = self.degen_conv(v)
+
+        # print("After 2: ", v.size())
+
+        v = self.degen_conv(v)
+
+        # print("After 3: ", v.size())
+
+        v = self.degen_conv2(v)
+
+        # print("Final (after 4): ", v.size())
+
+        # print("New v:", v.size())
+
+
+        v = torch.flatten(v, start_dim=1)
+
+        # print("Flattened: ", v.size())
+
+
+        q_conv = self.q_lin1(q)
+
+        # print("q_conv: ", q_conv.size())
+
+
+        # v = v / (v.norm(p=2, dim=1, keepdim=True).expand_as(v) + 1e-8)
+        # v = self.v_conv(self.drop(v)) # [128, 512, 14, 14]
+        # temp = v.mean(dim = -1)
+        # v_squeezed = temp.mean(dim = -1)
+        v_squeezed = v
+        # print(v_squeezed.size())
+        # q_tile1 = tile_2d_over_nd(q_conv, v_squeezed)
+        # print(q_conv.size())
+        combined = torch.cat([v_squeezed, q_conv], dim = 1)
+        # print(combined.size())
         answer = self.classifier(combined)
+        # print(answer.size())
         return answer
+
 
 class Classifier(nn.Sequential):
     def __init__(self, in_features, mid_features, out_features, drop=0.0):
-        # print(in_features, mid_features, out_features)
         super(Classifier, self).__init__()
         self.add_module('drop1', nn.Dropout(drop))
         self.add_module('lin1', nn.Linear(in_features, mid_features))
@@ -137,71 +144,36 @@ class TextProcessor(nn.Module):
         return c.squeeze(0)
 
 
-# # Visualize feature maps
-# activation = {}
-
 class Attention(nn.Module):
-    # def __init__(self, v_features, q_features, mid_features, glimpses, drop=0.0):
-    #     super(Attention, self).__init__()
-    #     self.v_conv = nn.Conv2d(v_features, mid_features, 1, bias=False)  # let self.lin take care of bias
-    #     self.q_lin = nn.Linear(q_features, mid_features)
-    #     self.x_conv = nn.Conv2d(mid_features, glimpses, 1) # 2 glimpses to look at
-
-    #     self.drop = nn.Dropout(drop)
-    #     self.relu = nn.ReLU(inplace=True)
-
     def __init__(self, v_features, q_features, mid_features, glimpses, drop=0.0):
         super(Attention, self).__init__()
-        primary_glimpses = 8
         self.v_conv = nn.Conv2d(v_features, mid_features, 1, bias=False)  # let self.lin take care of bias
-        self.q_lin1 = nn.Linear(q_features, mid_features)
-        self.q_lin2 = nn.Linear(q_features, primary_glimpses)
-        self.x_conv = nn.Conv2d(mid_features, primary_glimpses, 1) # 16 primary glimpses to look at
-        self.y_conv= nn.Conv2d(primary_glimpses, glimpses, 1) # 2 final glimpses
+        self.q_lin = nn.Linear(q_features, mid_features)
+        self.x_conv = nn.Conv2d(mid_features, glimpses, 1)
 
         self.drop = nn.Dropout(drop)
         self.relu = nn.ReLU(inplace=True)
-        
-    # def forward(self, v, q):
-    #     v = self.v_conv(self.drop(v)) # [128, 512, 14, 14]
-    #     q = self.q_lin(self.drop(q)) #= [128, 512]
-    #     q = tile_2d_over_nd(q, v)
-    #     # print("after tiling", q.size()) = [128, 512, 14, 14]
-    #     x = self.relu(v + q)
-    #     x = self.x_conv(self.drop(x)) # [128, 2, 14, 14]
-    #     return x
 
     def forward(self, v, q):
-        v = self.v_conv(self.drop(v)) # [128, 512, 14, 14]
+        v = self.v_conv(self.drop(v))
+        q = self.q_lin(self.drop(q))
+        q = tile_2d_over_nd(q, v)
+        x = self.relu(v + q)
+        x = self.x_conv(self.drop(x))
+        return x
 
-        # q = [128, 1024]
-        q_lin1 = self.q_lin1(self.drop(q)) # = [128, 512]
-        q_tile1 = tile_2d_over_nd(q_lin1, v)
-        # print("after tiling", q.size()) = [128, 512, 14, 14]
-        x = self.relu(v + q_tile1)
-        x = self.x_conv(self.drop(x)) # [128, 8, 14, 14]
-
-        q_lin2 = self.q_lin2(self.drop(q)) 
-        q_tile2 = tile_2d_over_nd(q_lin2, x)
-        y = self.relu(x + q_tile2)
-        y = self.y_conv(self.drop(y))
-        return y
 
 def apply_attention(input, attention):
-    """ Apply any number of attention maps over the input. 
-    Softmax the attention layer, then take weighted average with image input.
-    """
-    # attention: [128, 2, 14, 14], 2 glimpses
-    # input: [128, 2048, 14, 14]
+    """ Apply any number of attention maps over the input. """
     n, c = input.size()[:2]
     glimpses = attention.size(1)
 
     # flatten the spatial dims into the third dim, since we don't need to care about how they are arranged
-    input = input.view(n, 1, c, -1) # [n, 1, c, s] = [128, 1, 2048, 196]
-    attention = attention.view(n, glimpses, -1) # [128, 2, 196]
-    attention = F.softmax(attention, dim=-1).unsqueeze(2) # [n, g, 1, s] = [128, 2, 1, 196]
-    weighted = attention * input # [n, g, v, s] = [128, 2, 2048, 196]
-    weighted_mean = weighted.sum(dim=-1) # [n, g, v] = [128, 2, 2048]
+    input = input.view(n, 1, c, -1) # [n, 1, c, s]
+    attention = attention.view(n, glimpses, -1)
+    attention = F.softmax(attention, dim=-1).unsqueeze(2) # [n, g, 1, s]
+    weighted = attention * input # [n, g, v, s]
+    weighted_mean = weighted.sum(dim=-1) # [n, g, v]
     return weighted_mean.view(n, -1)
 
 
@@ -211,12 +183,11 @@ def tile_2d_over_nd(feature_vector, feature_map):
     """
     n, c = feature_vector.size()
     spatial_size = feature_map.dim() - 2
-    # print(n, c, spatial_size, feature_map.size()) = 128, 512, 2, [128, 512, 14, 14]
-    # feature_vector.view(n, c, *([1] * spatial_size)).size() = [128, 512, 1, 1]
-    tiled = feature_vector.view(n, c, *([1] * spatial_size)).expand_as(feature_map) #[128, 512, 14, 14]
+    tiled = feature_vector.view(n, c, *([1] * spatial_size)).expand_as(feature_map)
     return tiled
+
 def update_learning_rate(optimizer, iteration):
-    lr = config.initial_lr * 0.5**(float(iteration) / config.lr_halflife)
+    lr = config_as_dict["initial_lr"] * 0.5**(float(iteration) / config_as_dict["lr_halflife"])
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
@@ -242,6 +213,9 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
 
     log_softmax = nn.LogSoftmax().to("cuda:0" if torch.cuda.is_available() else "cpu")
     for v, q, a, idx, q_len in tq:
+        # print(v[0].shape)
+        # print(v[1].shape)
+        v = v[1]
         var_params = {
             'requires_grad': False,
         }
@@ -265,25 +239,14 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             optimizer.step()
 
             total_iterations += 1
-            # fig, axarr = plt.subplots(act0.size(0))
         else:
             # store information about evaluation of this minibatch
             _, answer = out.data.cpu().max(dim=1)
+
             answ.append(answer.view(-1))
             accs.append(acc.view(-1))
             idxs.append(idx.view(-1).clone())
-            # if epoch == config.epochs - 1:
-            #     acts = activation['attention'].squeeze()
-            #     actList = [acts[:,x,:,:] for x in range(2)] 
-            #     for num in range(2):
-            #         for i in range(actList[num].size(0)):
-            #             # print(act0[idx])
-            #             # axarr[idx].imshow(act0[idx])
-            #             # axarr[idx].set_title("dimension" + str(idx))
-            #             plt.imshow(actList[num][i].cpu())
-            #             plt.title("Modified Attention: Feature Map " + str(num+1))
-            #             plt.savefig("img_karl/img_" + str(idx[i].item())+ "_layer_" + str(num) + ".png")
-
+        
         loss_tracker.append(loss.data.item())
         # acc_tracker.append(acc.mean())
         for a in acc:
@@ -297,40 +260,37 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
         idxs = list(torch.cat(idxs, dim=0))
         return answ, accs, idxs
 
-
-def main():
+def main(name=None, config2=None):
     print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
     if len(sys.argv) > 1:
         name = ' '.join(sys.argv[1:])
     else:
         from datetime import datetime
-        name = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    target_name = os.path.join('logs_karl', '{}.pth'.format(name))
+        if name is None:
+            name = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        else:
+            name = name + datetime.now().strftime("-%Y-%m-%d_%H:%M:%S")
+    target_name = os.path.join('logs_degenerate', '{}.pth'.format(name))
     print('will save to {}'.format(target_name))
 
     cudnn.benchmark = True
 
-    train_loader = data.get_loader(train=True)
-    val_loader = data.get_loader(val=True)
+    train_loader = data.get_loader(train=True, include_original_images=True)
+    val_loader = data.get_loader(val=True, include_original_images=True)
 
     net = nn.DataParallel(Net(train_loader.dataset.num_tokens)).cuda()
-    # net = Net(train_loader.dataset.num_tokens)i
-    print(net)
-    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=0)
-    # def get_activation(name):
-    #     def hook(model, input, output):
-    #         activation[name] = output.detach()
-    #     return hook
-    # for name, layer in net.named_modules():
-    #     if name == "module.attention.y_conv":
-    #         layer.register_forward_hook(get_activation('attention'))
-    
-    # net.attention.register_forward_hook(get_activation('attention'))
-
     tracker = utils.Tracker()
-    config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
 
-    for i in range(config.epochs):
+    global config_as_dict
+    if config2 is None:
+        config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
+    else:
+        config_as_dict = config2
+
+    # optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=config_as_dict["weight_decay"])
+    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=.001)
+
+    for i in range(config_as_dict["epochs"]):
         _ = run(net, train_loader, optimizer, tracker, train=True, prefix='train', epoch=i)
         r = run(net, val_loader, optimizer, tracker, train=False, prefix='val', epoch=i)
 

@@ -1,9 +1,8 @@
 import torch
-import model
 import utils
 import data
 import json
-from train import run
+from model_baseline import run
 
 def get_answer_map():
     res = {}
@@ -20,7 +19,7 @@ def get_answer_map():
 def main():
     print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
     true_answer_map = get_answer_map()
-    log = torch.load('logs_karl/suitable_comp_2.pth', map_location=torch.device('cpu'))
+    log = torch.load('logs_is_color/final.pth', map_location=torch.device('cpu'))
     # answer_map = {v: k for k, v in log['vocab']['answer'].items()}
     
     temp = [torch.flatten(ans) for ans in log['eval']['answers']]

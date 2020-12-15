@@ -14,6 +14,9 @@ import os.path
 import math
 import json
 
+import model_colors
+import model_is_color
+import model_suitable
 
 import config
 import data
@@ -22,6 +25,7 @@ import config
 
 # batch_size = 128 
 
+# modified attention + feature augmentations
 class Net(nn.Module):
     """ Re-implementation of ``Show, Ask, Attend, and Answer: A Strong Baseline For Visual Question Answering'' [0]
 
@@ -55,7 +59,8 @@ class Net(nn.Module):
         # )
 
         self.classifier = Classifier(
-            in_features=glimpses * vision_features + vision_features,
+            # in_features=glimpses * vision_features + question_features + 16 + 1 + 1,
+            in_features=glimpses * vision_features + vision_features + 16 + 1 + 1, # testing karl's original setup
             mid_features=1024,
             out_features=config.max_answers,
             drop=0.5,
@@ -79,7 +84,33 @@ class Net(nn.Module):
     #     answer = self.classifier(combined)
     #     return answer
 
+        self.is_color_classifier = nn.DataParallel(model_is_color.ColorNet(embedding_tokens)).cuda()
+        log = torch.load('logs_is_color/final_updated_vocab.pth', map_location=torch.device('cpu'))
+        self.is_color_classifier.load_state_dict(log['weights'])
+        self.is_color_classifier_weights = log['weights']
+        self.is_color_classifier.eval()
+
+        self.color_classifier = nn.DataParallel(model_colors.color_net).cuda()
+        log = torch.load('logs_color/color_with_0.01_weight_decay-HHMMSS.pth', map_location=torch.device('cpu'))
+        self.color_classifier.load_state_dict(log['weights'])
+        self.color_classifier_weights = log['weights']
+        self.color_classifier.eval()
+
+        self.suitable_classifier = nn.DataParallel(model_suitable.QualityNet()).cuda()
+        log = torch.load('logs_karl/suitable_0.01decay_2xPenalty-.pth', map_location=torch.device('cpu'))
+        self.suitable_classifier.load_state_dict(log['weights'])
+        self.suitable_classifier_weights = log['weights']
+        self.suitable_classifier.eval()
+
     def forward(self, v, q, q_len):
+        with torch.set_grad_enabled(False):
+            self.is_color_classifier.eval()
+            is_color = self.is_color_classifier(q, q_len)
+            self.color_classifier.eval()
+            color = self.color_classifier(v)
+            self.suitable_classifier.eval()
+            suitable  = self.suitable_classifier(v)
+        
         q = self.text(q, list(q_len.data))
         # print("after text layer", q.size()) = [128, 1024]
         v = v / (v.norm(p=2, dim=1, keepdim=True).expand_as(v) + 1e-8)
@@ -87,11 +118,10 @@ class Net(nn.Module):
         a = self.attention(v, q)
         # print("after attention layer", a.size()) = [128, 2, 14, 14], 2 glimpses
         v_after_attention = apply_attention(v, a)
-    
         temp = v.mean(dim = -1)
         v_squeezed = temp.mean(dim = -1)
-        # print(v.size(), v_squeezed.size(), v_after_attention.size())
-        combined = torch.cat([v_squeezed, v_after_attention], dim=1)
+        combined = torch.cat([v_after_attention, v_squeezed, is_color, color, suitable], dim=1) 
+        # combined = torch.cat([v_after_attention, q, is_color, color, suitable], dim=1)
         # print("after concat", v.size()) = [128, 4096]
         answer = self.classifier(combined)
         return answer
@@ -136,9 +166,6 @@ class TextProcessor(nn.Module):
         _, (_, c) = self.lstm(packed)
         return c.squeeze(0)
 
-
-# # Visualize feature maps
-# activation = {}
 
 class Attention(nn.Module):
     # def __init__(self, v_features, q_features, mid_features, glimpses, drop=0.0):
@@ -272,17 +299,6 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
             answ.append(answer.view(-1))
             accs.append(acc.view(-1))
             idxs.append(idx.view(-1).clone())
-            # if epoch == config.epochs - 1:
-            #     acts = activation['attention'].squeeze()
-            #     actList = [acts[:,x,:,:] for x in range(2)] 
-            #     for num in range(2):
-            #         for i in range(actList[num].size(0)):
-            #             # print(act0[idx])
-            #             # axarr[idx].imshow(act0[idx])
-            #             # axarr[idx].set_title("dimension" + str(idx))
-            #             plt.imshow(actList[num][i].cpu())
-            #             plt.title("Modified Attention: Feature Map " + str(num+1))
-            #             plt.savefig("img_karl/img_" + str(idx[i].item())+ "_layer_" + str(num) + ".png")
 
         loss_tracker.append(loss.data.item())
         # acc_tracker.append(acc.mean())
@@ -298,14 +314,18 @@ def run(net, loader, optimizer, tracker, train=False, prefix='', epoch=0):
         return answ, accs, idxs
 
 
-def main():
+
+def main(name=None):
     print("running on", "cuda:0" if torch.cuda.is_available() else "cpu")
     if len(sys.argv) > 1:
         name = ' '.join(sys.argv[1:])
     else:
         from datetime import datetime
-        name = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
-    target_name = os.path.join('logs_karl', '{}.pth'.format(name))
+        if name is None:
+            name = datetime.now().strftime("%Y-%m-%d_%H:%M:%S")
+        else:
+            name = name + datetime.now().strftime("-%Y-%m-%d_%H:%M:%S")
+    target_name = os.path.join('logs_combined', '{}.pth'.format(name))
     print('will save to {}'.format(target_name))
 
     cudnn.benchmark = True
@@ -313,22 +333,11 @@ def main():
     train_loader = data.get_loader(train=True)
     val_loader = data.get_loader(val=True)
 
+    config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
     net = nn.DataParallel(Net(train_loader.dataset.num_tokens)).cuda()
-    # net = Net(train_loader.dataset.num_tokens)i
-    print(net)
-    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=0)
-    # def get_activation(name):
-    #     def hook(model, input, output):
-    #         activation[name] = output.detach()
-    #     return hook
-    # for name, layer in net.named_modules():
-    #     if name == "module.attention.y_conv":
-    #         layer.register_forward_hook(get_activation('attention'))
-    
-    # net.attention.register_forward_hook(get_activation('attention'))
+    optimizer = optim.Adam([p for p in net.parameters() if p.requires_grad], weight_decay=config_as_dict["weight_decay"])
 
     tracker = utils.Tracker()
-    config_as_dict = {k: v for k, v in vars(config).items() if not k.startswith('__')}
 
     for i in range(config.epochs):
         _ = run(net, train_loader, optimizer, tracker, train=True, prefix='train', epoch=i)

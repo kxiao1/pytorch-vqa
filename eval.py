@@ -3,7 +3,7 @@ import model
 import utils
 import data
 import json
-from train import run
+from model_baseline import run
 
 def get_answer_map():
     res = {}

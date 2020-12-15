@@ -25,7 +25,7 @@ def extract_vocab(iterable, top_k=None, start=0):
 
 
 def main():
-    annotations_path = utils.path_for_annotations(val=True)
+    annotations_path = utils.path_for_annotations(train=True)
 
     with open(annotations_path, 'r') as fd:
         annotations_json = json.load(fd)

@@ -99,7 +99,7 @@ def random_augmentation(image, blur_percent=0.5, pepper_percent=0.5, crop_percen
 
 
 def main():
-    # m = 4 # NUMBER OF THREADS TO SPAWN
+    # m = 32 # NUMBER OF THREADS TO SPAWN
     # n = 3 # NUMBER OF AUGMENTATIONS TO GENERATE
     # suffix = "augmented"
     # processes = []
